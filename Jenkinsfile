@@ -3,14 +3,19 @@ pipeline {
 
     tools {
         maven 'Maven'
+        jdk 'JDK17'
     }
 
     environment {
-        STACK_NAME = "cloud_native_microservices"
+        STACK_NAME = "mystack"
+        DOCKER_USER = "saxenaaayush9000"
     }
 
     stages {
 
+        // -----------------------------
+        // CHECKOUT CODE
+        // -----------------------------
         stage('Checkout Code') {
             steps {
                 git branch: 'main',
@@ -18,7 +23,10 @@ pipeline {
             }
         }
 
-        stage('Build Services (Maven)') {
+        // -----------------------------
+        // BUILD SERVICES (MAVEN)
+        // -----------------------------
+        stage('Build Services') {
             steps {
                 sh '''
                 mvn clean package -DskipTests -f Eureka/pom.xml
@@ -36,25 +44,69 @@ pipeline {
             }
         }
 
-        stage('Build Docker Images') {
+        // -----------------------------
+        // BUILD DOCKER IMAGES
+        // -----------------------------
+        stage('Docker Build') {
             steps {
                 sh '''
-                docker build -t eureka-service ./Eureka
-                docker build -t config-service ./SrpingCloudSerevr
-                docker build -t gateway-service ./APIGateway
+                docker build -t $DOCKER_USER/eureka-service ./Eureka
+                docker build -t $DOCKER_USER/config-service ./SrpingCloudSerevr
+                docker build -t $DOCKER_USER/gateway-service ./APIGateway
 
-                docker build -t product-service ./Product
-                docker build -t catalog-service ./ProductCatalogue
-                docker build -t inventory-service ./Inventory
-                docker build -t pricing-service ./Pricing
+                docker build -t $DOCKER_USER/product-service ./Product
+                docker build -t $DOCKER_USER/catalog-service ./ProductCatalogue
+                docker build -t $DOCKER_USER/inventory-service ./Inventory
+                docker build -t $DOCKER_USER/pricing-service ./Pricing
 
-                docker build -t cart-service ./Cart
-                docker build -t recommendation-service ./Recommendation
+                docker build -t $DOCKER_USER/cart-service ./Cart
+                docker build -t $DOCKER_USER/recommendation-service ./Recommendation
                 '''
             }
         }
 
-        stage('Init Docker Swarm (if needed)') {
+        // -----------------------------
+        // DOCKER LOGIN
+        // -----------------------------
+        stage('Docker Login') {
+            steps {
+                withCredentials([usernamePassword(
+                    credentialsId: 'docker-hub-cred',
+                    usernameVariable: 'USER',
+                    passwordVariable: 'PASS'
+                )]) {
+                    sh '''
+                    echo "$PASS" | docker login -u "$USER" --password-stdin
+                    '''
+                }
+            }
+        }
+
+        // -----------------------------
+        // PUSH TO DOCKER HUB
+        // -----------------------------
+        stage('Push Images') {
+            steps {
+                sh '''
+                docker push $DOCKER_USER/eureka-service
+                docker push $DOCKER_USER/config-service
+                docker push $DOCKER_USER/gateway-service
+
+                docker push $DOCKER_USER/product-service
+                docker push $DOCKER_USER/catalog-service
+                docker push $DOCKER_USER/inventory-service
+                docker push $DOCKER_USER/pricing-service
+
+                docker push $DOCKER_USER/cart-service
+                docker push $DOCKER_USER/recommendation-service
+                '''
+            }
+        }
+
+        // -----------------------------
+        // INIT SWARM
+        // -----------------------------
+        stage('Init Swarm') {
             steps {
                 sh '''
                 docker info | grep -q "Swarm: active" || docker swarm init
@@ -62,45 +114,59 @@ pipeline {
             }
         }
 
+        // -----------------------------
+        // REMOVE OLD STACK
+        // -----------------------------
         stage('Remove Old Stack') {
             steps {
                 sh '''
-                echo "Removing old stack..."
                 docker stack rm $STACK_NAME || true
                 sleep 15
                 '''
             }
         }
 
-        stage('Deploy Stack') {
+        // -----------------------------
+        // DEPLOY STACK
+        // -----------------------------
+        stage('Deploy to Swarm') {
             steps {
                 sh '''
-                echo "Deploying new stack..."
                 docker stack deploy -c docker-stack.yml $STACK_NAME
                 '''
             }
         }
 
+        // -----------------------------
+        // VERIFY DEPLOYMENT
+        // -----------------------------
         stage('Verify Deployment') {
             steps {
                 sh '''
-                echo "Services:"
                 docker stack services $STACK_NAME
-
-                echo "Tasks:"
                 docker stack ps $STACK_NAME
                 '''
             }
         }
 
+        // -----------------------------
+        // CHECK LOGS (OPTIONAL)
+        // -----------------------------
+        stage('Check Logs') {
+            steps {
+                sh '''
+                docker service logs ${STACK_NAME}_gateway --tail 20 || true
+                '''
+            }
+        }
     }
 
     post {
         success {
-            echo "🚀 All microservices deployed successfully via Docker Swarm!"
+            echo "🚀 CI/CD + Docker Hub + Swarm deployment SUCCESS!"
         }
         failure {
-            echo "❌ Pipeline failed — check logs carefully."
+            echo "❌ Pipeline failed — check logs"
         }
     }
 }

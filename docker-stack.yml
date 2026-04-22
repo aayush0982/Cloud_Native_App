@@ -1,0 +1,102 @@
+version: "3.8"
+
+services:
+
+  eureka:
+    image: eureka-service
+    ports:
+      - "8761:8761"
+    networks:
+      - micro-net
+
+  config:
+    image: config-service
+    ports:
+      - "8888:8888"
+    networks:
+      - micro-net
+    
+  zipkin:
+    image: openzipkin/zipkin
+    ports:
+      - "9411:9411"
+    networks:
+      - micro-net
+      
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: MAPPINGDB
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: 1234567890
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - micro-net
+    
+
+  gateway:
+    image: gateway-service
+    ports:
+      - "8088:8088"
+    networks:
+      - micro-net
+    depends_on:
+      - eureka
+    deploy:
+      replicas: 1
+
+  product:
+    image: product-service
+    networks:
+      - micro-net
+    deploy:
+      replicas: 1
+
+  cart:
+    image: cart-service
+    networks:
+      - micro-net
+    deploy:
+      replicas: 1
+
+  inventory:
+    image: inventory-service
+    networks:
+      - micro-net
+    deploy:
+      replicas: 1
+
+  price:
+    image: pricing-service
+    networks:
+      - micro-net
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+
+  catalog:
+    image: catalog-service
+    networks:
+      - micro-net
+    deploy:
+      replicas: 1
+
+  recommendation:
+    image: recommendation-service
+    networks:
+      - micro-net
+    deploy:
+      replicas: 1
+
+  
+
+networks:
+  micro-net:
+    driver: overlay
+
+volumes:
+  pgdata:
